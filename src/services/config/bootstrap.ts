@@ -37,23 +37,54 @@ const DEFAULT_REPOSITORIES = [
 const DEFAULT_RELEASE_BRANCHES = [
   { branchName: 'release/26.2.1.PRE', versionLabel: '26.2', stageLabel: 'PRE', isDefaultSource: true },
   { branchName: 'release/26.2.1.0', versionLabel: '26.2', stageLabel: '0', isDefaultSource: false },
+  // A patch line of its own rather than a third stage of 26.2: grouping it
+  // under the 26.2 header would read as "26.2 stage 2.0", which is not a stage.
+  { branchName: 'release/26.2.2.0', versionLabel: '26.2.2', stageLabel: '0', isDefaultSource: false },
   { branchName: 'release/26.5.1.PRE', versionLabel: '26.5', stageLabel: 'PRE', isDefaultSource: false },
   { branchName: 'release/26.5.1.0', versionLabel: '26.5', stageLabel: '0', isDefaultSource: false },
   { branchName: 'release/26.8.1.PRE', versionLabel: '26.8', stageLabel: 'PRE', isDefaultSource: false },
   { branchName: 'release/26.8.1.0', versionLabel: '26.8', stageLabel: '0', isDefaultSource: false },
+  // 26.12 is the newest line, so it sorts last: 12 > 8 by release order, not
+  // by string order.
+  { branchName: 'release/26.12.1.RC', versionLabel: '26.12', stageLabel: 'RC', isDefaultSource: false },
 ] as const;
 
+/**
+ * Registers the default release columns.
+ *
+ * Reconciles rather than seeding only on an empty table, for the same reason as
+ * the repositories below: adding a release line here has to reach an install
+ * that already has rows, which is every install after the first run.
+ *
+ * `enabled` is never written, so a column the user unticked on the settings
+ * page stays unticked. `sortOrder` is rewritten from the array position on
+ * every call, because a new line inserted in the middle has to push the later
+ * ones along - the two-row matrix header only lines up while a version's
+ * stages are adjacent.
+ */
 export async function ensureReleaseBranches(): Promise<void> {
-  const existing = await prisma.releaseBranchConfig.count();
-  if (existing > 0) return;
+  const known = new Set(
+    (await prisma.releaseBranchConfig.findMany({ select: { branchName: true } })).map(
+      (branch) => branch.branchName,
+    ),
+  );
 
-  await prisma.releaseBranchConfig.createMany({
-    data: DEFAULT_RELEASE_BRANCHES.map((branch, index) => ({
-      ...branch,
-      sortOrder: index,
-    })),
-  });
-  log.info('seeded default release branches', { count: DEFAULT_RELEASE_BRANCHES.length });
+  let added = 0;
+  for (const [index, branch] of DEFAULT_RELEASE_BRANCHES.entries()) {
+    if (!known.has(branch.branchName)) added += 1;
+
+    await prisma.releaseBranchConfig.upsert({
+      where: { branchName: branch.branchName },
+      create: { ...branch, sortOrder: index },
+      update: {
+        versionLabel: branch.versionLabel,
+        stageLabel: branch.stageLabel,
+        sortOrder: index,
+      },
+    });
+  }
+
+  if (added > 0) log.info('registered release branches', { added });
 }
 
 export async function ensureAppConfig(): Promise<void> {

@@ -314,6 +314,8 @@ export default function DashboardPage() {
               matrix={matrix.data}
               selectedBugs={selectedBugs}
               expandedBugs={expandedBugs}
+              orgUrl={config.data?.adoOrgUrl}
+              project={config.data?.adoProject}
               onToggleBug={toggleBug}
               onToggleAll={toggleAll}
               onToggleExpand={toggleExpand}

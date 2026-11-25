@@ -13,6 +13,7 @@ import { useState } from 'react';
 
 import { CellMark } from '@/components/dashboard/cell-mark';
 import { Button } from '@/components/ui/button';
+import { pullRequestUrl, workItemUrl } from '@/lib/ado/urls';
 import { cn } from '@/lib/utils';
 import type { MatrixBugRow, MatrixCell, MatrixFix } from '@/services/backport/matrix';
 import { describeStatus, isActionable } from '@/types/backport/status';
@@ -66,29 +67,27 @@ export function DetailDrawer({
   const [report, setReport] = useState<DryRunReport | null>(null);
 
   const prUrl = (pullRequestId: number) =>
-    orgUrl && project
-      ? `${orgUrl}/${encodeURIComponent(project)}/_git/${encodeURIComponent(fix.repositoryName)}/pullrequest/${pullRequestId}`
-      : null;
+    pullRequestUrl(orgUrl, project, fix.repositoryName, pullRequestId);
 
   const run = useMutation({
     mutationFn: async (mode: 'rehearse' | 'execute') => {
       const body =
         mode === 'execute'
           ? {
-              confirm: 'create-pull-requests',
-              items: [
-                {
-                  repository: fix.repositoryName,
-                  pullRequestId: fix.originPullRequestId,
-                  targetBranch: cell.branchName,
-                },
-              ],
-            }
+            confirm: 'create-pull-requests',
+            items: [
+              {
+                repository: fix.repositoryName,
+                pullRequestId: fix.originPullRequestId,
+                targetBranch: cell.branchName,
+              },
+            ],
+          }
           : {
-              repository: fix.repositoryName,
-              pullRequestId: fix.originPullRequestId,
-              targetBranch: cell.branchName,
-            };
+            repository: fix.repositoryName,
+            pullRequestId: fix.originPullRequestId,
+            targetBranch: cell.branchName,
+          };
 
       const response = await fetch(
         mode === 'execute' ? '/api/backport/execute' : '/api/backport/dry-run',
@@ -136,7 +135,26 @@ export function DetailDrawer({
               ) : null}
             </div>
             <p className="mt-1 truncate text-xs text-muted-foreground" title={bug.title}>
-              {bug.workItemId ? `#${bug.workItemId} · ` : ''}
+              {/* Same new-tab rule as the grid: the drawer holds a rehearsal
+                  report that navigating away would lose. */}
+              {bug.workItemId ? (
+                <>
+                  {workItemUrl(orgUrl, project, bug.workItemId) ? (
+                    <a
+                      href={workItemUrl(orgUrl, project, bug.workItemId)!}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline"
+                      title={`Open work item ${bug.workItemId} in Azure DevOps, in a new tab`}
+                    >
+                      #{bug.workItemId}
+                    </a>
+                  ) : (
+                    `#${bug.workItemId}`
+                  )}
+                  {' · '}
+                </>
+              ) : null}
               {bug.title}
             </p>
           </div>

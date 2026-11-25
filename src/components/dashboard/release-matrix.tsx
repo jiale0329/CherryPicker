@@ -1,8 +1,9 @@
 'use client';
 
-import { BookmarkX, ChevronDown, ChevronRight, Info } from 'lucide-react';
+import { BookmarkX, ChevronDown, ChevronRight, ExternalLink, Info } from 'lucide-react';
 
 import { CellMark } from '@/components/dashboard/cell-mark';
+import { workItemUrl } from '@/lib/ado/urls';
 import { groupColumnsByVersion } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type {
@@ -42,6 +43,8 @@ export function ReleaseMatrix({
   matrix,
   selectedBugs,
   expandedBugs,
+  orgUrl,
+  project,
   onToggleBug,
   onToggleAll,
   onToggleExpand,
@@ -51,6 +54,8 @@ export function ReleaseMatrix({
   matrix: MatrixResult;
   selectedBugs: ReadonlySet<string>;
   expandedBugs: ReadonlySet<string>;
+  orgUrl?: string | null;
+  project?: string | null;
   onToggleBug: (key: string) => void;
   onToggleAll: (checked: boolean) => void;
   onToggleExpand: (key: string) => void;
@@ -71,8 +76,17 @@ export function ReleaseMatrix({
         column and squeezed the release columns, however much truncation the
         cell asked for. A min-width keeps the release columns usable and lets
         the wrapper scroll instead of compressing them.
+
+        The minimum is computed from the column count rather than fixed: the
+        four leading columns are 34.75rem (2.75 + 2 + 22 + 8) and each release
+        column is the 5rem its `col` asks for. A hardcoded width would either
+        compress the columns once a release line is added or force a scrollbar
+        once one is unticked.
       */}
-      <table className="w-full min-w-[66rem] table-fixed border-collapse text-sm">
+      <table
+        className="w-full table-fixed border-collapse text-sm"
+        style={{ minWidth: `${34.75 + matrix.columns.length * 5}rem` }}
+      >
         <colgroup>
           <col className="w-11" />
           <col className="w-8" />
@@ -155,6 +169,8 @@ export function ReleaseMatrix({
                 matrix={matrix}
                 isExpanded={isExpanded}
                 isSelected={isSelected}
+                orgUrl={orgUrl}
+                project={project}
                 onToggleBug={onToggleBug}
                 onToggleExpand={onToggleExpand}
                 onOpenCell={onOpenCell}
@@ -227,6 +243,8 @@ function BugRowGroup({
   matrix,
   isExpanded,
   isSelected,
+  orgUrl,
+  project,
   onToggleBug,
   onToggleExpand,
   onOpenCell,
@@ -237,6 +255,8 @@ function BugRowGroup({
   matrix: MatrixResult;
   isExpanded: boolean;
   isSelected: boolean;
+  orgUrl?: string | null;
+  project?: string | null;
   onToggleBug: (key: string) => void;
   onToggleExpand: (key: string) => void;
   onOpenCell: (bug: MatrixBugRow, fix: MatrixFix, cell: MatrixCell) => void;
@@ -247,6 +267,7 @@ function BugRowGroup({
   const singleRepo = bug.fixes.length === 1;
   const hasNoFixes = bug.fixes.length === 0;
   const Chevron = isExpanded ? ChevronDown : ChevronRight;
+  const adoUrl = workItemUrl(orgUrl, project, bug.workItemId);
 
   return (
     <>
@@ -286,33 +307,32 @@ function BugRowGroup({
 
         <td className="px-3 py-2.5 align-top">
           <div className="min-w-0">
-            <div className="flex items-start gap-2">
-              {bug.workItemId ? (
-                <span
-                  className="tabular mt-px shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                  title={`${bug.workItemType ?? 'Work item'} ${bug.workItemId}`}
-                >
-                  #{bug.workItemId}
-                </span>
-              ) : (
-                <span className="mt-px shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                  no work item
-                </span>
-              )}
-              {/*
-                Two lines rather than one, then ellipsis. Work item titles here
-                are long and front-loaded with site and incident codes
-                ("INC1979374 | PUN | PRD | Backflush | …"), so a single line
-                often cut off before the part that identifies the bug. The full
-                text is in the tooltip and the detail drawer.
-              */}
-              <p
-                className="line-clamp-2 font-medium leading-snug text-foreground"
-                title={bug.title}
+            {/*
+              The work item opens in a new tab, never in place: the dashboard
+              holds scope, filters, selection and expansion state that
+              navigating away would discard, and triage usually means reading
+              the bug and coming back.
+
+              A cell is a separate target with its own drawer, so the link is
+              scoped to the identity block rather than the whole row.
+            */}
+            {adoUrl ? (
+              <a
+                href={adoUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Open work item ${bug.workItemId} in Azure DevOps, in a new tab`}
+                className="group flex cursor-pointer items-start gap-2 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               >
-                {bug.title}
-              </p>
-            </div>
+                <WorkItemChip bug={bug} linked />
+                <BugTitle title={bug.title} linked />
+              </a>
+            ) : (
+              <div className="flex items-start gap-2">
+                <WorkItemChip bug={bug} />
+                <BugTitle title={bug.title} />
+              </div>
+            )}
 
             {/*
               Two pieces of metadata, not five.
@@ -449,6 +469,60 @@ function BugRowGroup({
         ))
         : null}
     </>
+  );
+}
+
+/**
+ * The `#1507096` badge, or a placeholder when a fix carries no work item.
+ *
+ * `linked` only changes the hover colours. The anchor is the parent, so this
+ * never nests an interactive element inside another.
+ */
+function WorkItemChip({ bug, linked }: { bug: MatrixBugRow; linked?: boolean }) {
+  if (!bug.workItemId) {
+    return (
+      <span className="mt-px shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+        no work item
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        'tabular mt-px shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground',
+        linked &&
+        'transition-colors duration-150 group-hover:bg-primary/10 group-hover:text-primary',
+      )}
+      title={
+        linked
+          ? `${bug.workItemType ?? 'Work item'} ${bug.workItemId} — opens in Azure DevOps in a new tab`
+          : `${bug.workItemType ?? 'Work item'} ${bug.workItemId}`
+      }
+    >
+      #{bug.workItemId}
+      {linked ? <ExternalLink className="ml-1 inline size-3 align-[-1px]" aria-hidden /> : null}
+    </span>
+  );
+}
+
+/**
+ * Two lines rather than one, then ellipsis. Work item titles here are long and
+ * front-loaded with site and incident codes ("INC1979374 | PUN | PRD |
+ * Backflush | …"), so a single line often cut off before the part that
+ * identifies the bug. The full text is in the tooltip and the detail drawer.
+ */
+function BugTitle({ title, linked }: { title: string; linked?: boolean }) {
+  return (
+    <p
+      className={cn(
+        'line-clamp-2 font-medium leading-snug text-foreground',
+        linked && 'transition-colors duration-150 group-hover:text-primary group-hover:underline',
+      )}
+      title={title}
+    >
+      {title}
+    </p>
   );
 }
 
