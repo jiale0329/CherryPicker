@@ -1,0 +1,231 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  Release Backport Manager design tokens.
+
+  Dark is the primary theme. Light values are defined so the app degrades
+  sensibly if the `dark` class is ever removed, but the product is designed
+  and reviewed against the dark palette.
+
+  Surfaces use four deliberate elevations rather than ad-hoc greys:
+    --surface-base    page background
+    --surface-raised  cards, panels, table headers
+    --surface-overlay drawers, dialogs, popovers
+    --surface-sunken  insets: log output, code, empty states
+*/
+
+:root {
+  --radius: 0.5rem;
+
+  --surface-base: oklch(0.985 0 0);
+  --surface-raised: oklch(1 0 0);
+  --surface-overlay: oklch(1 0 0);
+  --surface-sunken: oklch(0.967 0.001 286);
+  --row-stripe: oklch(0.978 0.001 286);
+
+  --background: var(--surface-base);
+  --foreground: oklch(0.21 0.006 286);
+
+  --card: var(--surface-raised);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface-overlay);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.55 0.21 262);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.967 0.001 286);
+  --secondary-foreground: oklch(0.21 0.006 286);
+
+  --muted: oklch(0.967 0.001 286);
+  --muted-foreground: oklch(0.552 0.014 286);
+  --accent: oklch(0.967 0.001 286);
+  --accent-foreground: oklch(0.21 0.006 286);
+
+  --destructive: oklch(0.577 0.245 27);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --border: oklch(0.92 0.004 286);
+  --border-strong: oklch(0.87 0.005 286);
+  --input: oklch(0.92 0.004 286);
+  --ring: oklch(0.55 0.21 262);
+
+  /* Backport status ramp - one hue per status, never reused. */
+  --status-not-started: oklch(0.55 0.015 286);
+  --status-processing: oklch(0.62 0.17 255);
+  --status-cherry-picked: oklch(0.68 0.13 215);
+  --status-pr-created: oklch(0.62 0.19 300);
+  --status-pr-approved: oklch(0.68 0.13 180);
+  --status-merged: oklch(0.65 0.17 150);
+  --status-conflict: oklch(0.72 0.16 75);
+  --status-failed: oklch(0.6 0.23 27);
+  --status-skipped: oklch(0.6 0.02 286);
+  --status-unavailable: oklch(0.8 0.004 286);
+}
+
+.dark {
+  /*
+    Deep slate rather than neutral grey, and a wider gap between elevations.
+    The previous base and raised surfaces were 4 points of lightness apart,
+    which left the table header barely distinguishable from the page. Cooling
+    the hue slightly reads as a deliberate developer-tool dark theme instead of
+    washed-out grey.
+  */
+  --surface-base: oklch(0.155 0.012 266);
+  --surface-raised: oklch(0.212 0.014 266);
+  --surface-overlay: oklch(0.248 0.015 266);
+  --surface-sunken: oklch(0.125 0.012 266);
+
+  /* Alternating row tint. Subtle on purpose: it should aid scanning a wide
+     table, not stripe it. */
+  --row-stripe: oklch(0.182 0.013 266);
+
+  --background: var(--surface-base);
+  --foreground: oklch(0.97 0.003 266);
+
+  --card: var(--surface-raised);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface-overlay);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.7 0.16 255);
+  --primary-foreground: oklch(0.16 0.01 262);
+  --secondary: oklch(0.28 0.012 266);
+  --secondary-foreground: oklch(0.97 0.003 266);
+
+  --muted: oklch(0.28 0.012 266);
+  /*
+    Raised from 0.69. Secondary text carries most of this dashboard's
+    information - authors, branches, counts - and at the old value it sat near
+    the 4.5:1 floor against the raised surface.
+  */
+  --muted-foreground: oklch(0.755 0.014 266);
+  --accent: oklch(0.31 0.014 266);
+  --accent-foreground: oklch(0.97 0.003 266);
+
+  --destructive: oklch(0.62 0.21 25);
+  --destructive-foreground: oklch(0.98 0.002 286);
+
+  /*
+    Two floors, measured rather than eyeballed (tools/contrast-check.mjs):
+
+      --border         table gridlines and card edges. A decorative separator,
+                       so it needs to be clearly perceivable, not 3:1. At the
+                       old 0.275 it measured 1.2:1 against a card and simply
+                       vanished, which is why the table read as one grey block.
+                       0.41 gives ~2:1.
+
+      --border-strong  outlines inputs, selects and outline buttons. That is an
+                       interactive affordance, so WCAG wants 3:1. 0.52 gives
+                       3.2:1.
+  */
+  --border: oklch(0.41 0.014 266);
+  --border-strong: oklch(0.52 0.016 266);
+  --input: oklch(0.52 0.016 266);
+  --ring: oklch(0.7 0.16 255);
+
+  --status-not-started: oklch(0.62 0.014 286);
+  --status-processing: oklch(0.7 0.16 255);
+  --status-cherry-picked: oklch(0.75 0.12 215);
+  --status-pr-created: oklch(0.72 0.17 300);
+  --status-pr-approved: oklch(0.76 0.12 180);
+  --status-merged: oklch(0.74 0.16 152);
+  --status-conflict: oklch(0.79 0.15 78);
+  --status-failed: oklch(0.68 0.2 25);
+  --status-skipped: oklch(0.56 0.015 286);
+  --status-unavailable: oklch(0.36 0.006 286);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-surface-base: var(--surface-base);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-row-stripe: var(--row-stripe);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-status-not-started: var(--status-not-started);
+  --color-status-processing: var(--status-processing);
+  --color-status-cherry-picked: var(--status-cherry-picked);
+  --color-status-pr-created: var(--status-pr-created);
+  --color-status-pr-approved: var(--status-pr-approved);
+  --color-status-merged: var(--status-merged);
+  --color-status-conflict: var(--status-conflict);
+  --color-status-failed: var(--status-failed);
+  --color-status-skipped: var(--status-skipped);
+  --color-status-unavailable: var(--status-unavailable);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+
+  /*
+    System font stack rather than next/font/google. Google Fonts are fetched at
+    build time, and this network intercepts TLS, so a webfont would make the
+    build depend on the CA bundle. Segoe UI Variable is the Windows 11 default
+    and reads well at small sizes in dense tables.
+  */
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', Inter, system-ui, -apple-system,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Tabular figures everywhere numbers are compared down a column. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+
+  /*
+    A target cell whose release branch does not exist in the repository.
+    Visually inert so it cannot be mistaken for "Pending".
+  */
+  .cell-unavailable {
+    background-image: repeating-linear-gradient(135deg,
+        transparent,
+        transparent 4px,
+        var(--color-status-unavailable) 4px,
+        var(--color-status-unavailable) 5px);
+    opacity: 0.55;
+  }
+}

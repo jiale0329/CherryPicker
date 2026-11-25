@@ -1,0 +1,286 @@
+// Release Backport Manager - persistence.
+//
+// ADO stays the source of truth for pull request and merge status. This database
+// holds what ADO cannot tell us: the execution record of backport attempts, the
+// link between an original PR and the PRs it produced, configuration, and a
+// refreshable cache of ADO reads so the dashboard is not rate-limited.
+//
+// SQLite has no native enum, so status-like columns are strings constrained by
+// TypeScript unions in src/types. The unions are the single definition.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 moved the connection URL out of the schema. It now lives in
+// prisma.config.ts, which supplies a better-sqlite3 driver adapter.
+datasource db {
+  provider = "sqlite"
+}
+
+/// Single-row application configuration. Editable from the settings page so
+/// release versions and repositories are never hardcoded in source.
+model AppConfig {
+  id Int @id @default(1)
+
+  adoOrgUrl  String
+  adoProject String
+
+  gitExecutable String?
+  mirrorDir     String @default(".repo-cache")
+  worktreeDir   String @default(".worktrees")
+
+  /// Identity stamped as committer on commits this tool creates.
+  committerName  String
+  committerEmail String
+
+  /// Identity of the PAT owner, resolved from _apis/connectionData. Used by the
+  /// "only my pull requests" filter. Verified to equal PR.createdBy.id.
+  adoUserId          String?
+  adoUserDisplayName String?
+
+  /// Nothing is hidden by default: every tracked repository shows at once and
+  /// priority is expressed by row category instead of by filtering.
+  defaultOnlyMine Boolean @default(false)
+
+  /// Optional hiding, off by default. Kept because it is occasionally useful,
+  /// but it is not how the dashboard prioritises work - see the category model.
+  excludedWorkItemStatesJson String @default("[]")
+
+  /// Work item states that mean the bug is finished. Everything else counts as
+  /// still open and raises the row's category.
+  ///
+  /// The project uses a custom state set: Done, Fixed, Back Merged,
+  /// Closed Rejected, Confirmed Fixed, Ready to Test. "Closed Rejected" is
+  /// included because a rejected bug is finished and should not be backported.
+  closedWorkItemStatesJson String @default("[\"Done\",\"Closed Rejected\"]")
+
+  /// Team convention. The `-on-release-{targetSlug}` suffix is required for
+  /// uniqueness: without it, backporting one work item to several releases
+  /// would reuse a single branch name and collide with the original fix branch.
+  backportBranchTemplate String @default("hotfix/{workItemId}-{slug}-on-release-{targetSlug}")
+
+  /// "Cherry-Pick" is a deliberate marker the team reads, not noise.
+  prTitleTemplate String @default("Cherry-Pick | {repo} | {targetVersion} | {originalTitle}")
+  prDescriptionTemplate  String @default("Backport of !{prId} from `{sourceBranch}` to `{targetBranch}`.\n\nCherry-picked `{pickSha}`.\n\n_Created by Release Backport Manager._")
+
+  /// Target branches enforce "minimum 1 non-creator reviewer", so a backport PR
+  /// with no reviewer can never complete. Default is to reuse whoever reviewed
+  /// the original PR.
+  copyReviewersFromOriginal Boolean @default(true)
+  fixedReviewerIdsJson      String  @default("[]")
+
+  createPrAsDraft Boolean @default(false)
+
+  /// Merge strategy stamped on created pull requests, used when a human
+  /// completes them. Squash keeps one commit per fix on the release branch,
+  /// matching how 83% of this project's pull requests were already completed.
+  ///
+  /// Unrelated to how the cherry-pick is applied: a 2-parent merge commit still
+  /// requires `-m 1`, which git enforces and which already produces a single
+  /// commit on the backport branch.
+  prSquashMerge Boolean @default(true)
+  concurrency     Int     @default(3)
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Repositories the dashboard tracks. Names come from ADO, not from source.
+model TrackedRepository {
+  id              String  @id @default(cuid())
+  name            String  @unique
+  adoRepositoryId String  @unique
+  defaultBranch   String?
+  enabled         Boolean @default(true)
+  sortOrder       Int     @default(0)
+
+  createdAt DateTime @default(now())
+}
+
+/// The release columns of the tracking matrix. Shared across repositories;
+/// whether a branch actually exists in a given repository is resolved live from
+/// ADO refs, because coverage is ragged (core-sqldatabase has no 26.8 branches).
+model ReleaseBranchConfig {
+  id         Int     @id @default(autoincrement())
+  branchName String  @unique
+  /// e.g. "26.2"
+  versionLabel String
+  /// e.g. "PRE" or "0"
+  stageLabel      String
+  sortOrder       Int
+  isDefaultSource Boolean @default(false)
+  enabled         Boolean @default(true)
+}
+
+/// One backport attempt: a single original PR into a single target branch.
+/// Uniqueness on (repository, original PR, target branch) makes retries update
+/// one row instead of accumulating duplicates.
+model BackportJob {
+  id String @id @default(cuid())
+
+  repositoryName  String
+  adoRepositoryId String
+
+  originalPrId     Int
+  originalPrTitle  String
+  originalPrAuthor String
+  sourceBranch     String
+  targetBranch     String
+
+  /// Work item ids parsed from the `hotfix/{id}-{slug}` branch convention and
+  /// from the PR's ADO links. Used to correlate a fix across releases, since
+  /// cherry-picking changes the commit sha.
+  workItemIdsJson String  @default("[]")
+  correlationKey  String?
+
+  /// How the original PR was completed. Decides the cherry-pick command:
+  /// a squash leaves a single-parent commit, noFastForward leaves a merge
+  /// commit that needs `-m 1`.
+  mergeStrategy   String
+  pickCommitSha   String
+  pickParentCount Int     @default(1)
+
+  backportBranch String?
+  targetPrId     Int?
+  targetPrUrl    String?
+
+  status  String
+  attempt Int    @default(0)
+
+  conflictFilesJson String?
+  errorCode         String?
+  errorMessage      String?
+
+  createdAt  DateTime  @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  logs BackportJobLog[]
+
+  @@unique([adoRepositoryId, originalPrId, targetBranch])
+  @@index([status])
+  @@index([correlationKey])
+  @@index([repositoryName, targetBranch])
+}
+
+/// Append-only execution log, shown in the detail drawer.
+model BackportJobLog {
+  id    Int         @id @default(autoincrement())
+  jobId String
+  job   BackportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  ts      DateTime @default(now())
+  level   String
+  step    String?
+  message String
+
+  /// Captured git stdout/stderr, when the entry came from a command.
+  command String?
+  output  String?
+
+  @@index([jobId, ts])
+}
+
+/// Relationship between an original PR and a PR that carries it into another
+/// release. `discoverySource` records how we know, so a link we created is
+/// distinguishable from one inferred for a backport done by hand before this
+/// tool existed.
+model PullRequestLink {
+  id Int @id @default(autoincrement())
+
+  adoRepositoryId String
+  originalPrId    Int
+  targetPrId      Int
+  targetBranch    String
+
+  /// job | branch-name | work-item | commit-trailer | manual
+  discoverySource String
+  /// definitive | strong | weak
+  confidence String @default("strong")
+
+  createdAt DateTime @default(now())
+
+  @@unique([adoRepositoryId, originalPrId, targetPrId])
+  @@index([adoRepositoryId, originalPrId])
+}
+
+/// Refreshable cache of completed PRs read from ADO. Lets the matrix render
+/// without re-reading ~850 PRs on every request. Never treated as authoritative:
+/// `syncedAt` drives staleness and the refresh action re-reads from ADO.
+model CachedPullRequest {
+  adoRepositoryId String
+  pullRequestId   Int
+
+  repositoryName String
+  title          String
+  author         String
+  authorId       String?
+  sourceBranch   String
+  targetBranch   String
+  status         String
+
+  mergeStrategy      String?
+  lastMergeCommitSha String?
+  /// Parent count of lastMergeCommit: 1 = squash/rebase, 2 = merge commit.
+  lastMergeParents Int?
+
+  correlationKey  String?
+  workItemIdsJson String  @default("[]")
+  reviewersJson   String  @default("[]")
+
+  openedAt DateTime
+  closedAt DateTime?
+  syncedAt DateTime  @default(now())
+
+  @@id([adoRepositoryId, pullRequestId])
+  @@index([adoRepositoryId, targetBranch])
+  @@index([correlationKey])
+}
+
+/// Work item state, cached because many pull requests share one work item and
+/// the dashboard filters on state.
+///
+/// States observed in this project are a custom set, not the Agile defaults:
+/// Done, Fixed, Back Merged, Closed Rejected, Confirmed Fixed, Ready to Test.
+/// "Back Merged" is the team's own marker for a fix that has been propagated.
+model WorkItemCache {
+  id           Int     @id
+  state        String
+  workItemType String
+  title        String
+  assignedTo   String?
+
+  syncedAt DateTime @default(now())
+
+  @@index([state])
+}
+
+/// Bugs the developer has explicitly pinned.
+///
+/// The watchlist is a focused daily surface, not a replacement for the full
+/// sync: a bug nobody remembered to add would otherwise be invisible rather
+/// than merely "missing", which is the problem the dashboard exists to solve.
+/// Removing an entry only unpins it; the cached pull requests stay, so the bug
+/// remains visible in the all-bugs view.
+model WatchedBug {
+  workItemId Int     @id
+  note       String?
+
+  addedAt       DateTime  @default(now())
+  lastFetchedAt DateTime?
+  /// Pull requests found by the last work-item-first fetch.
+  lastPrCount Int @default(0)
+}
+
+/// Per repository+branch sync bookkeeping, so a refresh can be incremental and
+/// the UI can show how stale the data is.
+model SyncState {
+  id              Int       @id @default(autoincrement())
+  adoRepositoryId String
+  targetBranch    String
+  lastSyncedAt    DateTime?
+  lastError       String?
+  prCount         Int       @default(0)
+
+  @@unique([adoRepositoryId, targetBranch])
+}
