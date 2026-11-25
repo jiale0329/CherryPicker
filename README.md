@@ -1,5 +1,7 @@
 # Release Backport Manager
 
+![alt text](image-2.png)
+
 Tracks which bug fixes have reached which release branches in Azure DevOps, and
 automates the cherry-pick plus pull request needed to close the gaps.
 
